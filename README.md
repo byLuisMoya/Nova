@@ -285,3 +285,10 @@ Sandbox **desactivado**, la app **no es publicable en la Mac App Store**.
 - macOS **13+**. No requiere root.
 - Ejecuta desde una sesión gráfica local (la barra de menú necesita WindowServer;
   no funciona por SSH sin sesión de ventanas).
+
+---
+
+## Licencia
+
+[MIT](LICENSE) © Luis Moya. Úsalo, modifícalo y distribúyelo libremente,
+manteniendo el aviso de copyright. Se ofrece *tal cual*, sin garantías.
