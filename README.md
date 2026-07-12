@@ -290,5 +290,5 @@ Sandbox **desactivado**, la app **no es publicable en la Mac App Store**.
 
 ## Licencia
 
-[MIT](LICENSE) © Luis Moya. Úsalo, modifícalo y distribúyelo libremente,
+[MIT](LICENSE) © byLuisMoya. Úsalo, modifícalo y distribúyelo libremente,
 manteniendo el aviso de copyright. Se ofrece *tal cual*, sin garantías.
