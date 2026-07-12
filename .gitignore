@@ -1,0 +1,8 @@
+# Build de SwiftPM
+.build/
+
+# Artefactos generados en pruebas
+*-sensores.txt
+
+# macOS
+.DS_Store
