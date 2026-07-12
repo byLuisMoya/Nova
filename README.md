@@ -29,6 +29,30 @@ funciona directamente.
 
 ---
 
+## Capturas
+
+<p align="center">
+  <img src="docs/menubar.png" alt="Nova en la barra de menú" height="26"><br>
+  <sub>En la barra de menú, junto al reloj: la temperatura del SoC.</sub>
+</p>
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/popover-temperatura.png" alt="Pestaña Temperatura" width="300"><br>
+      <sub><b>Temperatura</b> — máximo por componente, color por severidad y una
+      sparkline con su evolución.</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/popover-potencia.png" alt="Pestaña Potencia" width="300"><br>
+      <sub><b>Potencia</b> — presión térmica, consumo total con historial y los
+      vatios por bloque.</sub>
+    </td>
+  </tr>
+</table>
+
+---
+
 ## Instalar y arrancar automáticamente
 
 Para dejarlo instalado como app de barra de menú que **arranca sola en cada
