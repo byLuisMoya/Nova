@@ -13,6 +13,7 @@ struct MenuBarPopoverView: View {
 
     @State private var showAll = false
     @State private var tab: Tab = .temperature
+    @State private var showLaunchHint = false
 
     enum Tab: Hashable { case temperature, power }
 
@@ -175,6 +176,9 @@ struct MenuBarPopoverView: View {
                 .foregroundStyle(.primary)
             Text("Nova")
                 .font(.headline)
+            if !settings.launchAtLogin {
+                launchAtLoginHint
+            }
             Spacer()
             if let update = vm.lastUpdate {
                 // Cadena estática (no `style: .time`, que se auto-refresca cada
@@ -187,6 +191,26 @@ struct MenuBarPopoverView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    /// Aviso discreto (solo cuando el autoarranque está desactivado): al pasar
+    /// el ratón explica que Nova no arrancará sola; al hacer clic abre Preferencias.
+    private var launchAtLoginHint: some View {
+        Image(systemName: "exclamationmark.triangle.fill")
+            .font(.caption)
+            .foregroundStyle(.orange)
+            .onHover { hovering in showLaunchHint = hovering }
+            .onTapGesture { onPreferences() }
+            .popover(isPresented: $showLaunchHint, arrowEdge: .bottom) {
+                Text("Nova no se iniciará automáticamente al encender el equipo. "
+                     + "Actívalo en Preferencias (\u{2699}\u{FE0E}) → “Abrir al iniciar sesión”.")
+                    .font(.caption)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 240, alignment: .leading)
+                    .padding(10)
+            }
+            .help("Nova no arrancará sola al iniciar sesión. Haz clic para configurarlo en Preferencias.")
     }
 
     private static let timeFormatter: DateFormatter = {
