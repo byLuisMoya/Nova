@@ -210,7 +210,6 @@ struct MenuBarPopoverView: View {
                     .frame(width: 240, alignment: .leading)
                     .padding(10)
             }
-            .help("Nova no arrancará sola al iniciar sesión. Haz clic para configurarlo en Preferencias.")
     }
 
     private static let timeFormatter: DateFormatter = {
