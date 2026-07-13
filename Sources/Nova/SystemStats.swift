@@ -167,11 +167,13 @@ enum ThermalPressure {
     }
 
     var color: Color {
+        // Misma paleta de estado adaptada a claro/oscuro que la severidad de
+        // temperatura, para que "Normal" (verde) case con las gráficas.
         switch self {
-        case .nominal:  return .green
-        case .fair:     return .yellow
-        case .serious:  return .orange
-        case .critical: return .red
+        case .nominal:  return .statusGreen
+        case .fair:     return .statusAmber
+        case .serious:  return .statusOrange
+        case .critical: return .statusRed
         }
     }
 

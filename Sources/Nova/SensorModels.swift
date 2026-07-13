@@ -13,6 +13,14 @@ extension Color {
                 ? NSColor(dark) : NSColor(light)
         })
     }
+
+    // Paleta de estado compartida (severidad de temperatura y presión térmica),
+    // para que el mismo nivel tenga el mismo color en toda la app. En claro,
+    // tonos más oscuros/saturados con buen contraste; en oscuro, los vivos.
+    static let statusGreen  = Color(light: Color(red: 0.16, green: 0.53, blue: 0.24), dark: .green)
+    static let statusAmber  = Color(light: Color(red: 0.72, green: 0.47, blue: 0.00), dark: .yellow)
+    static let statusOrange = Color(light: Color(red: 0.85, green: 0.38, blue: 0.02), dark: .orange)
+    static let statusRed    = Color(light: Color(red: 0.80, green: 0.16, blue: 0.13), dark: .red)
 }
 
 // MARK: - Severidad / color
@@ -36,12 +44,9 @@ enum Severity {
 
     var color: Color {
         switch self {
-        // En claro, tonos más oscuros/saturados para que texto, punto y
-        // sparkline tengan contraste sobre el fondo gris claro; en oscuro se
-        // mantienen los vivos originales.
-        case .normal: return Color(light: Color(red: 0.16, green: 0.53, blue: 0.24), dark: .green)
-        case .warm:   return Color(light: Color(red: 0.72, green: 0.47, blue: 0.00), dark: .yellow)
-        case .hot:    return Color(light: Color(red: 0.80, green: 0.16, blue: 0.13), dark: .red)
+        case .normal: return .statusGreen
+        case .warm:   return .statusAmber
+        case .hot:    return .statusRed
         }
     }
 }
