@@ -65,9 +65,10 @@ Instala `Nova.app` en `/Applications`. La app va firmada **ad-hoc** (sin Apple
 Developer ID), así que el cask retira el atributo de cuarentena tras instalar
 para que Gatekeeper no la bloquee.
 
-> **Nota:** esta vía **no** configura el arranque automático en cada login (eso
-> lo hace `./install.sh` con un LaunchAgent). Con Homebrew la abres cuando
-> quieras desde Spotlight o `open -a Nova`.
+> **Autoarranque:** por Homebrew la app **no** arranca sola al inicio de sesión
+> por defecto. Puedes activarlo desde la propia app en **Preferencias ▸ "Abrir
+> al iniciar sesión"** (instala un LaunchAgent y tiene efecto en el próximo
+> login). Mientras tanto, la abres desde Spotlight o con `open -a Nova`.
 
 Desinstalar:
 
@@ -265,7 +266,7 @@ En `HistoryCharts.swift` (UI) y en `ThermalViewModel` (datos):
   `PowerHistoryChart` (área apilada) en la ventana. Las series llevan color
   estable por componente, aparte de la codificación por severidad de los textos.
 
-### Preferencias (°C / °F)
+### Preferencias (°C / °F y autoarranque)
 
 En `AppSettings.swift`:
 
@@ -280,6 +281,14 @@ En `AppSettings.swift`:
   grande). La barra de menú, que es AppKit, se suscribe a `settings.$unit` para
   repintar su título. Las sparklines no se convierten: al no tener eje, la forma
   es idéntica en °C y °F.
+- **Abrir al iniciar sesión** (`LoginItemManager.swift`): un toggle escribe o
+  borra un LaunchAgent en `~/Library/LaunchAgents` — el **mismo** (label y ruta)
+  que instala `install.sh`, así que ambas vías son intercambiables. No usa
+  `SMAppService` (que exige firma; con ad-hoc es dudoso) ni `launchctl`: activar
+  solo escribe el `.plist` (launchd lo carga en el próximo login, sin lanzar una
+  segunda instancia) y desactivar solo lo borra (sin `bootout`, para no cerrar la
+  app en marcha). La fuente de verdad del estado es la existencia del `.plist`,
+  no un booleano en `UserDefaults`.
 
 ---
 

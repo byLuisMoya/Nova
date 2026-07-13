@@ -40,9 +40,22 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(unit.rawValue, forKey: Self.unitKey) }
     }
 
+    /// Autoarranque en cada inicio de sesión. NO se persiste en UserDefaults: la
+    /// fuente de verdad es si existe el LaunchAgent (`LoginItemManager`), así que
+    /// refleja también el que pueda haber instalado `install.sh`. Por defecto es
+    /// `false` en instalaciones por Homebrew (que no crean el LaunchAgent).
+    @Published private(set) var launchAtLogin: Bool
+
     private init() {
         let raw = UserDefaults.standard.string(forKey: Self.unitKey)
         unit = raw.flatMap(TemperatureUnit.init(rawValue:)) ?? .celsius
+        launchAtLogin = LoginItemManager.isEnabled
+    }
+
+    /// Cambia el autoarranque y re-lee el estado real (si falla, revierte solo).
+    func setLaunchAtLogin(_ enabled: Bool) {
+        try? LoginItemManager.setEnabled(enabled)
+        launchAtLogin = LoginItemManager.isEnabled
     }
 }
 
@@ -74,9 +87,28 @@ struct PreferencesView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            Divider()
+
+            HStack {
+                Text("Abrir al iniciar sesión")
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { settings.launchAtLogin },
+                    set: { settings.setLaunchAtLogin($0) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+            }
+
+            Text("Instala un LaunchAgent para que Nova arranque sola en cada "
+                 + "inicio de sesión. Tiene efecto a partir del próximo login.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             Spacer()
         }
         .padding(20)
-        .frame(width: 380, height: 180)
+        .frame(width: 380, height: 280)
     }
 }
