@@ -53,6 +53,28 @@ funciona directamente.
 
 ---
 
+## Instalar con Homebrew
+
+La forma más rápida, con un solo comando:
+
+```bash
+brew install --cask byLuisMoya/nova/nova
+```
+
+Instala `Nova.app` en `/Applications`. La app va firmada **ad-hoc** (sin Apple
+Developer ID), así que el cask retira el atributo de cuarentena tras instalar
+para que Gatekeeper no la bloquee.
+
+> **Nota:** esta vía **no** configura el arranque automático en cada login (eso
+> lo hace `./install.sh` con un LaunchAgent). Con Homebrew la abres cuando
+> quieras desde Spotlight o `open -a Nova`.
+
+Desinstalar:
+
+```bash
+brew uninstall --cask byLuisMoya/nova/nova   # añade --zap para borrar también preferencias
+```
+
 ## Instalar y arrancar automáticamente
 
 Para dejarlo instalado como app de barra de menú que **arranca sola en cada
@@ -295,11 +317,33 @@ causa probable y un botón para reintentar.
 
 ## Distribución
 
-El `.app` que crea `install.sh` va **firmado ad-hoc**, suficiente para usarlo en
-tu propio Mac. Si quisieras distribuirlo a **otros** equipos, tendrías que
-firmarlo con **Developer ID**, activar **Hardened Runtime** y **notarizarlo**
-(`xcrun notarytool` + `stapler`). Como la lectura de sensores exige el App
-Sandbox **desactivado**, la app **no es publicable en la Mac App Store**.
+El `.app` va **firmado ad-hoc**, suficiente para usarlo en tu propio Mac. Si
+quisieras firmarlo "de verdad" para otros equipos sin retirar cuarentena,
+tendrías que usar **Developer ID**, activar **Hardened Runtime** y
+**notarizarlo** (`xcrun notarytool` + `stapler`). Como la lectura de sensores
+exige el App Sandbox **desactivado**, la app **no es publicable en la Mac App
+Store**.
+
+### Publicar una versión en Homebrew
+
+El cask vive en un tap propio: [`byLuisMoya/homebrew-nova`](https://github.com/byLuisMoya/homebrew-nova).
+Para sacar una versión nueva:
+
+1. Empaqueta el `.app` en un `.zip` y obtén su `sha256`:
+
+   ```bash
+   ./tools/package-release.sh 1.1        # genera Nova-1.1.zip + imprime el sha256
+   ```
+
+2. Crea un **GitHub Release** con tag `v1.1` en este repo y sube `Nova-1.1.zip`
+   como asset.
+
+3. En el tap, edita `Casks/nova.rb`: actualiza `version` y `sha256` (la `url` ya
+   usa `#{version}`, no hace falta tocarla).
+
+El cask retira la cuarentena en un bloque `postflight` (la app es ad-hoc), de
+modo que `brew install --cask byLuisMoya/nova/nova` abre sin bloqueo de
+Gatekeeper.
 
 ---
 

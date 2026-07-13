@@ -4,5 +4,9 @@
 # Artefactos generados en pruebas
 *-sensores.txt
 
+# Empaquetado de releases (script tools/package-release.sh)
+.release/
+Nova-*.zip
+
 # macOS
 .DS_Store
