@@ -60,6 +60,12 @@ enum SensorReader {
             }
             guard !name.isEmpty else { continue }
 
+            // Descartar los sensores de calibración (p. ej. "PMU tcal"): no son
+            // medidas en vivo sino una constante de referencia del PMU, que se
+            // queda clavada (~52°C) y, al ser la más alta, falsearía el máximo
+            // del SoC. Los dies reales ("tdie"/"tdev") sí reflejan la temperatura.
+            if name.lowercased().contains("tcal") { continue }
+
             // Copiar el evento de temperatura y leer su valor.
             guard let event = IOHIDServiceClientCopyEvent(service,
                                                           kIOHIDEventTypeTemperature,
