@@ -70,6 +70,16 @@ para que Gatekeeper no la bloquee.
 > al iniciar sesión"** (instala un LaunchAgent y tiene efecto en el próximo
 > login). Mientras tanto, la abres desde Spotlight o con `open -a Nova`.
 
+Actualizar (Nova no se autoactualiza; volver a lanzar `install` no basta, dice
+que ya está instalada):
+
+```bash
+brew upgrade --cask byLuisMoya/nova/nova   # o 'brew upgrade' para todo lo desactualizado
+```
+
+Cierra Nova antes (botón "Salir"), ya que se reemplaza el `.app`, y vuélvela a
+abrir después.
+
 Desinstalar:
 
 ```bash
@@ -109,10 +119,11 @@ Comportamiento:
   doble clic en `~/Applications/Nova.app`, o `open ~/Applications/Nova.app`.
 - No aparece en el Dock (`.accessory` / `LSUIElement`).
 
-Actualizar tras cambiar código (recompila, reemplaza el bundle y relanza):
+Actualizar a la última versión (baja los cambios, recompila, reemplaza el bundle
+y relanza):
 
 ```bash
-./install.sh
+git pull && ./install.sh
 ```
 
 Desinstalar (para el proceso, quita el LaunchAgent y borra el `.app`):
