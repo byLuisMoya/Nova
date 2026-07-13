@@ -12,6 +12,10 @@ final class ThermalViewModel: ObservableObject {
     // Señales adicionales (pestaña "Potencia").
     @Published private(set) var power: PowerReading?
     @Published private(set) var fans: [FanReading] = []
+    /// Número de ventiladores físicos según el SMC (clave `FNum`). Distingue un
+    /// equipo realmente sin ventilador (0) de uno con ventilador del que no se
+    /// logra leer RPM (`fans` vacío pero `fanCount > 0`).
+    @Published private(set) var fanCount: Int = 0
     @Published private(set) var thermalPressure: ThermalPressure = .nominal
 
     // Histórico para las gráficas (buffer circular por serie).
@@ -66,11 +70,13 @@ final class ThermalViewModel: ObservableObject {
             // potencia guarda estado entre llamadas y no es thread-safe.
             let power = PowerReader.read()
             let fans = FanReader.read()
+            let fanCount = FanReader.count()
             DispatchQueue.main.async {
                 let now = Date()
                 self.apply(raw, at: now)
                 self.power = power
                 self.fans = fans
+                self.fanCount = fanCount
                 self.thermalPressure = ThermalPressure.current
                 if self.errorMessage == nil {
                     self.recordHistory(at: now, power: power)

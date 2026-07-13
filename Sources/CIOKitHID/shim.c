@@ -243,8 +243,14 @@ static double fanRPMUnlocked(int index) {
     snprintf(key, sizeof(key), "F%dAc", index);
     SMCKeyData_t v; SMCKeyInfoData info;
     if (smcRead(key, &v, &info) != 0 || info.dataSize < 4) return -1.0;
+    // dataType es un FourCC empaquetado en big-endian (igual que la clave que
+    // el kernel casa en smcKey), no bytes en orden nativo: hay que extraerlo a
+    // mano, no con memcpy, o en little-endian saldría "flt " invertido.
     char type[5] = {0};
-    memcpy(type, &info.dataType, 4);
+    type[0] = (char)((info.dataType >> 24) & 0xFF);
+    type[1] = (char)((info.dataType >> 16) & 0xFF);
+    type[2] = (char)((info.dataType >>  8) & 0xFF);
+    type[3] = (char)( info.dataType        & 0xFF);
     if (strncmp(type, "flt ", 4) != 0) return -1.0;
     float f;
     memcpy(&f, v.bytes, 4);

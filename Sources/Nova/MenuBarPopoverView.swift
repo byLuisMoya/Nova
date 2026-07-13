@@ -153,6 +153,10 @@ struct MenuBarPopoverView: View {
                     }
                     .font(.callout)
                 }
+            } else if vm.fanCount > 0 {
+                Label("Ventilador detectado, sin lectura de RPM", systemImage: "fanblades")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             } else {
                 Label("Sin ventilador (refrigeración pasiva)", systemImage: "wind")
                     .font(.caption)

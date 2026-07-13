@@ -159,8 +159,10 @@ struct PowerTab: View {
                 if vm.powerHistory.values.contains(where: { $0.count >= 2 }) {
                     historyCard
                 }
-                if vm.fans.isEmpty {
+                if vm.fanCount == 0 {
                     fanlessNote
+                } else if vm.fans.isEmpty {
+                    fanNoReadingNote
                 } else {
                     fansCard
                 }
@@ -259,6 +261,16 @@ struct PowerTab: View {
     private var fanlessNote: some View {
         Label("Este Mac no tiene ventilador (refrigeración pasiva).",
               systemImage: "wind")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 4)
+    }
+
+    private var fanNoReadingNote: some View {
+        Label(vm.fanCount == 1
+                ? "Ventilador detectado, sin lectura de RPM."
+                : "\(vm.fanCount) ventiladores detectados, sin lectura de RPM.",
+              systemImage: "fanblades")
             .font(.caption)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 4)
