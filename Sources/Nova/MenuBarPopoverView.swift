@@ -198,7 +198,9 @@ struct MenuBarPopoverView: View {
     private var launchAtLoginHint: some View {
         Image(systemName: "exclamationmark.triangle.fill")
             .font(.caption)
-            .foregroundStyle(.orange)
+            // Naranja vivo (con toque rojo) en claro, para que resalte sobre el
+            // fondo claro sin apagarse; naranja del sistema en oscuro.
+            .foregroundStyle(Color(light: Color(red: 0.91, green: 0.35, blue: 0.05), dark: .orange))
             .onHover { hovering in showLaunchHint = hovering }
             .onTapGesture { onPreferences() }
             .popover(isPresented: $showLaunchHint, arrowEdge: .bottom) {

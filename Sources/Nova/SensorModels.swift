@@ -1,4 +1,19 @@
 import SwiftUI
+import AppKit
+
+// MARK: - Color adaptativo claro/oscuro
+
+extension Color {
+    /// Color que resuelve a `light` u `dark` según la apariencia del sistema.
+    /// Necesario porque los colores "crudos" del sistema (`.green`, `.yellow`)
+    /// están pensados para fondo oscuro y pierden contraste en modo claro.
+    init(light: Color, dark: Color) {
+        self.init(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                ? NSColor(dark) : NSColor(light)
+        })
+    }
+}
 
 // MARK: - Severidad / color
 
@@ -21,9 +36,12 @@ enum Severity {
 
     var color: Color {
         switch self {
-        case .normal: return .green
-        case .warm:   return .yellow
-        case .hot:    return .red
+        // En claro, tonos más oscuros/saturados para que texto, punto y
+        // sparkline tengan contraste sobre el fondo gris claro; en oscuro se
+        // mantienen los vivos originales.
+        case .normal: return Color(light: Color(red: 0.16, green: 0.53, blue: 0.24), dark: .green)
+        case .warm:   return Color(light: Color(red: 0.72, green: 0.47, blue: 0.00), dark: .yellow)
+        case .hot:    return Color(light: Color(red: 0.80, green: 0.16, blue: 0.13), dark: .red)
         }
     }
 }
