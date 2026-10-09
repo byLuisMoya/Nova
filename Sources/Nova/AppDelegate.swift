@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
         // --- Arranque del refresco + actualización del título ---
         vm.start()
+        UpdateChecker.shared.start()
         vm.$groups
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.updateStatusTitle() }
@@ -136,6 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
                                          onPreferences: { [weak self] in self?.openPreferences() },
                                          onQuit: { NSApp.terminate(nil) })
                 .environmentObject(settings)
+                .environmentObject(UpdateChecker.shared)
         )
         hosting.sizingOptions = [.preferredContentSize]
         return hosting

@@ -70,8 +70,9 @@ para que Gatekeeper no la bloquee.
 > al iniciar sesión"** (instala un LaunchAgent y tiene efecto en el próximo
 > login). Mientras tanto, la abres desde Spotlight o con `open -a Nova`.
 
-Actualizar (Nova no se autoactualiza; volver a lanzar `install` no basta, dice
-que ya está instalada):
+Actualizar (Nova no se autoactualiza, pero desde la 1.4 avisa: si hay una release
+más nueva en GitHub aparece un icono de descarga en la cabecera del desplegable;
+volver a lanzar `install` no basta, dice que ya está instalada):
 
 ```bash
 brew upgrade --cask byLuisMoya/nova/nova   # o 'brew upgrade' para todo lo desactualizado

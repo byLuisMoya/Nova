@@ -7,12 +7,14 @@ struct MenuBarPopoverView: View {
     @ObservedObject var vm: ThermalViewModel
     @ObservedObject var ui: UIState
     @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var updates: UpdateChecker
     var onOpenWindow: () -> Void
     var onDiagnose: () -> Void
     var onPreferences: () -> Void
     var onQuit: () -> Void
 
     @State private var showLaunchHint = false
+    @State private var showUpdateHint = false
 
     enum Tab: Hashable { case temperature, power }
 
@@ -199,6 +201,9 @@ struct MenuBarPopoverView: View {
             if !settings.launchAtLogin {
                 launchAtLoginHint
             }
+            if let version = updates.availableVersion {
+                updateHint(version)
+            }
             Spacer()
             if let update = vm.lastUpdate {
                 // Cadena estática (no `style: .time`, que se auto-refresca cada
@@ -226,6 +231,26 @@ struct MenuBarPopoverView: View {
             .popover(isPresented: $showLaunchHint, arrowEdge: .bottom) {
                 Text("Nova no se iniciará automáticamente al encender el equipo. "
                      + "Actívalo en Preferencias (\u{2699}\u{FE0E}) → “Abrir al iniciar sesión”.")
+                    .font(.caption)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 240, alignment: .leading)
+                    .padding(10)
+            }
+    }
+
+    /// Aviso de versión nueva (solo si GitHub tiene una release más reciente):
+    /// al pasar el ratón explica cómo actualizar; al hacer clic abre la release.
+    private func updateHint(_ version: String) -> some View {
+        Image(systemName: "arrow.down.circle.fill")
+            .font(.caption)
+            .foregroundStyle(Color.accentColor)
+            .onHover { hovering in showUpdateHint = hovering }
+            .onTapGesture { NSWorkspace.shared.open(updates.releaseURL) }
+            .popover(isPresented: $showUpdateHint, arrowEdge: .bottom) {
+                Text("Hay una versión nueva de Nova (\(version)). Actualiza con "
+                     + "«brew upgrade» si la instalaste con Homebrew, o con «git pull» "
+                     + "y «./install.sh» desde el repositorio. Clic para ver la release.")
                     .font(.caption)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
