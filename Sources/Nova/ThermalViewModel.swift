@@ -56,6 +56,9 @@ final class ThermalViewModel: ObservableObject {
         let t = Timer(timeInterval: refreshInterval, repeats: true) { [weak self] _ in
             self?.refresh()
         }
+        // Margen para que el sistema agrupe este despertar con otros (ahorro
+        // de energía); unas décimas de holgura no se notan en la lectura.
+        t.tolerance = refreshInterval * 0.2
         RunLoop.main.add(t, forMode: .common)
         timer = t
     }
@@ -72,52 +75,73 @@ final class ThermalViewModel: ObservableObject {
             let fans = FanReader.read()
             let fanCount = FanReader.count()
             DispatchQueue.main.async {
-                let now = Date()
-                self.apply(raw, at: now)
-                self.power = power
-                self.fans = fans
-                self.fanCount = fanCount
-                self.thermalPressure = ThermalPressure.current
-                if self.errorMessage == nil {
-                    self.recordHistory(at: now, power: power)
-                }
+                self.apply(raw, power: power, fans: fans, fanCount: fanCount, at: Date())
             }
         }
     }
 
-    private func apply(_ raw: [RawSensor], at now: Date) {
+    /// Aplica una lectura completa. Cada `@Published` asignado dispara un
+    /// `objectWillChange` (y una invalidación de las vistas), así que solo se
+    /// asigna lo que cambia y el histórico se construye en copias locales que
+    /// se publican de una vez, no serie a serie.
+    private func apply(_ raw: [RawSensor], power: PowerReading?, fans: [FanReading],
+                       fanCount: Int, at now: Date) {
+        if self.power != power { self.power = power }
+        if self.fans != fans { self.fans = fans }
+        if self.fanCount != fanCount { self.fanCount = fanCount }
+        let pressure = ThermalPressure.current
+        if thermalPressure != pressure { thermalPressure = pressure }
+
         guard !raw.isEmpty else {
             // Fallo explícito, nunca silencioso.
-            errorMessage = "No se encontraron sensores de temperatura.\n\n"
-                + "Comprueba que ejecutas en un Mac con Apple Silicon. "
-                + "(En una app con App Sandbox activo la lista sale vacía.)"
+            if errorMessage == nil {
+                errorMessage = "No se encontraron sensores de temperatura.\n\n"
+                    + "Comprueba que ejecutas en un Mac con Apple Silicon. "
+                    + "(En una app con App Sandbox activo la lista sale vacía.)"
+            }
             return
         }
 
-        errorMessage = nil
+        if errorMessage != nil { errorMessage = nil }
         let mapped = raw.map {
             TemperatureSensor(name: $0.name,
                               value: $0.value,
                               category: SensorCategory.classify($0.name))
         }
-        groups = SensorGroup.build(from: mapped)
+        let newGroups = SensorGroup.build(from: mapped)
+        if groups != newGroups { groups = newGroups }
         lastUpdate = now
+        recordHistory(at: now, power: power)
     }
 
     // MARK: - Histórico
 
+    /// Contador de muestras; su resto entre la capacidad da el hueco (`slot`)
+    /// de cada punto, que le sirve de id acotado (ver `HistoryPoint`).
+    private var sampleCount = 0
+
     /// Añade una muestra al histórico de cada serie y recorta al tope.
     private func recordHistory(at now: Date, power: PowerReading?) {
+        let slot = sampleCount % historyCapacity
+        sampleCount += 1
+
+        var temps = tempHistory
         for group in groups {
-            append(HistoryPoint(time: now, value: group.maxValue),
-                   to: &tempHistory[group.category, default: []])
+            append(HistoryPoint(time: now, value: group.maxValue, slot: slot),
+                   to: &temps[group.category, default: []])
         }
+        tempHistory = temps
+
         if let p = power {
+            var byKind = powerHistory
             for c in p.components {
-                append(HistoryPoint(time: now, value: c.watts),
-                       to: &powerHistory[c.kind, default: []])
+                append(HistoryPoint(time: now, value: c.watts, slot: slot),
+                       to: &byKind[c.kind, default: []])
             }
-            append(HistoryPoint(time: now, value: p.total), to: &powerTotalHistory)
+            powerHistory = byKind
+            var total = powerTotalHistory
+            append(HistoryPoint(time: now, value: p.total, slot: slot), to: &total)
+            powerTotalHistory = total
         }
     }
 

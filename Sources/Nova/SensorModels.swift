@@ -132,7 +132,7 @@ enum SensorCategory: String, CaseIterable, Identifiable {
 
 // MARK: - Sensor individual
 
-struct TemperatureSensor: Identifiable {
+struct TemperatureSensor: Identifiable, Equatable {
     let name: String
     let value: Double
     let category: SensorCategory
@@ -147,7 +147,7 @@ struct TemperatureSensor: Identifiable {
 
 // MARK: - Grupo por componente
 
-struct SensorGroup: Identifiable {
+struct SensorGroup: Identifiable, Equatable {
     let category: SensorCategory
     let sensors: [TemperatureSensor]
 

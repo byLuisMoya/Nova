@@ -35,7 +35,7 @@ struct InfoHint: View {
 // MARK: - Potencia (vatios por bloque del SoC)
 
 /// Lectura instantánea del consumo por bloque, en vatios.
-struct PowerReading {
+struct PowerReading: Equatable {
     let cpu: Double
     let gpu: Double
     let ane: Double
@@ -92,7 +92,7 @@ enum PowerReader {
 
 // MARK: - Ventiladores (RPM)
 
-struct FanReading: Identifiable {
+struct FanReading: Identifiable, Equatable {
     let index: Int
     let rpm: Double
     var id: Int { index }

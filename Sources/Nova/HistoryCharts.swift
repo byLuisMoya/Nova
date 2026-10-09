@@ -5,7 +5,12 @@ import Charts
 struct HistoryPoint: Identifiable {
     let time: Date
     let value: Double
-    var id: Date { time }
+    /// Hueco del buffer circular (0..<capacidad). Swift Charts guarda en un
+    /// diccionario interno cada `id` que ha visto; con un id por instante
+    /// (`Date`) ese diccionario crece sin límite mientras la gráfica está
+    /// visible. Con el hueco, el conjunto de ids queda acotado.
+    let slot: Int
+    var id: Int { slot }
 }
 
 // MARK: - Sparkline (mini-gráfica sin ejes)

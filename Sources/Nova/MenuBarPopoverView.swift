@@ -5,17 +5,42 @@ import SwiftUI
 ///  · Potencia:    consumo por bloque, ventiladores y presión térmica.
 struct MenuBarPopoverView: View {
     @ObservedObject var vm: ThermalViewModel
+    @ObservedObject var ui: UIState
     @EnvironmentObject var settings: AppSettings
     var onOpenWindow: () -> Void
     var onDiagnose: () -> Void
     var onPreferences: () -> Void
     var onQuit: () -> Void
 
-    @State private var showAll = false
-    @State private var tab: Tab = .temperature
     @State private var showLaunchHint = false
 
     enum Tab: Hashable { case temperature, power }
+
+    /// Estado de interfaz que debe sobrevivir al cierre del desplegable y de la
+    /// ventana: su contenido SwiftUI se destruye al cerrarse (para no seguir
+    /// re-renderizando ni retener memoria en segundo plano) y se recrea al
+    /// abrir, así que la pestaña y el interruptor viven aquí y no en `@State`.
+    final class UIState: ObservableObject {
+        @Published var tab: Tab = .temperature
+        @Published var showAll = false
+    }
+
+    /// Selector de pestaña en su propia vista: no depende del ViewModel, así
+    /// que el refresco de datos cada 2 s no vuelve a evaluar el `Picker`
+    /// (cada evaluación de un `Picker` segmentado deja objetos internos de
+    /// SwiftUI vivos y la memoria crecía mientras el desplegable estaba abierto).
+    struct TabPicker: View {
+        @Binding var tab: Tab
+
+        var body: some View {
+            Picker("", selection: $tab) {
+                Label("Temperatura", systemImage: "thermometer.medium").tag(Tab.temperature)
+                Label("Potencia", systemImage: "bolt.fill").tag(Tab.power)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+    }
 
     /// Tope de altura de la lista; por encima, aparece scroll.
     private let maxListHeight: CGFloat = 360
@@ -27,7 +52,7 @@ struct MenuBarPopoverView: View {
         let groupUnit: CGFloat = 72  // fila de grupo + tarjeta sparkline + espaciado
         let sensorUnit: CGFloat = 24 // fila de sensor + espaciado
         var h = base + CGFloat(vm.groups.count) * groupUnit
-        if showAll {
+        if ui.showAll {
             let sensors = vm.groups.reduce(0) { $0 + $1.sensors.count }
             h += CGFloat(sensors) * sensorUnit
         }
@@ -44,17 +69,12 @@ struct MenuBarPopoverView: View {
             } else if vm.groups.isEmpty {
                 loadingView
             } else {
-                Picker("", selection: $tab) {
-                    Label("Temperatura", systemImage: "thermometer.medium").tag(Tab.temperature)
-                    Label("Potencia", systemImage: "bolt.fill").tag(Tab.power)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                TabPicker(tab: $ui.tab)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
                 Divider()
 
-                switch tab {
+                switch ui.tab {
                 case .temperature: temperatureTab
                 case .power:       powerTab
                 }
@@ -74,7 +94,7 @@ struct MenuBarPopoverView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     ForEach(vm.groups) { group in
                         groupRow(group)
-                        if showAll {
+                        if ui.showAll {
                             ForEach(group.sensors) { sensor in
                                 sensorRow(sensor)
                             }
@@ -89,7 +109,7 @@ struct MenuBarPopoverView: View {
             .frame(height: min(listHeight, maxListHeight))
 
             Divider()
-            Toggle("Ver todos los sensores", isOn: $showAll)
+            Toggle("Ver todos los sensores", isOn: $ui.showAll)
                 .toggleStyle(.switch)
                 .controlSize(.mini)
                 .font(.caption)

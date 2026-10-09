@@ -4,14 +4,20 @@ import Combine
 
 /// Gestiona el item de la barra de menú (NSStatusItem), el popover con la UI
 /// SwiftUI y una ventana principal opcional.
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSWindowDelegate {
 
     private let vm = ThermalViewModel()
     private let settings = AppSettings.shared
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var mainWindow: NSWindow?
+    /// Posición y tamaño de la ventana principal al cerrarla, para reabrirla igual.
+    private var mainWindowFrame: NSRect?
     private var prefsWindow: NSWindow?
+    // Estado de interfaz (pestaña, "ver todos") que sobrevive a destruir el
+    // contenido del desplegable y de la ventana al cerrarlos.
+    private let popoverUI = MenuBarPopoverView.UIState()
+    private let windowUI = MenuBarPopoverView.UIState()
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -26,21 +32,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.target = self
         }
 
-        // --- Popover con la vista SwiftUI ---
+        // --- Popover (su vista SwiftUI se crea al abrirlo, ver togglePopover) ---
         popover = NSPopover()
         popover.behavior = .transient
-        // El popover se ajusta al tamaño intrínseco de la vista SwiftUI, así que
-        // la altura se adapta a los sensores visibles (con un tope, ver la vista).
-        let hosting = NSHostingController(
-            rootView: MenuBarPopoverView(vm: vm,
-                                         onOpenWindow: { [weak self] in self?.openMainWindow() },
-                                         onDiagnose: { [weak self] in self?.runDiagnostics() },
-                                         onPreferences: { [weak self] in self?.openPreferences() },
-                                         onQuit: { NSApp.terminate(nil) })
-                .environmentObject(settings)
-        )
-        hosting.sizingOptions = [.preferredContentSize]
-        popover.contentViewController = hosting
+        popover.delegate = self
 
         // --- Arranque del refresco + actualización del título ---
         vm.start()
@@ -126,11 +121,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .systemRed
     }
 
+    /// Crea la vista SwiftUI del desplegable. Se monta al abrirlo y se suelta al
+    /// cerrarlo (`popoverDidClose`): una vista viva aunque el desplegable esté
+    /// cerrado se sigue re-renderizando en cada refresco y retiene la memoria
+    /// de SwiftUI y Charts.
+    private func makePopoverContent() -> NSViewController {
+        // El popover se ajusta al tamaño intrínseco de la vista SwiftUI, así que
+        // la altura se adapta a los sensores visibles (con un tope, ver la vista).
+        let hosting = NSHostingController(
+            rootView: MenuBarPopoverView(vm: vm,
+                                         ui: popoverUI,
+                                         onOpenWindow: { [weak self] in self?.openMainWindow() },
+                                         onDiagnose: { [weak self] in self?.runDiagnostics() },
+                                         onPreferences: { [weak self] in self?.openPreferences() },
+                                         onQuit: { NSApp.terminate(nil) })
+                .environmentObject(settings)
+        )
+        hosting.sizingOptions = [.preferredContentSize]
+        return hosting
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        popover.contentViewController = nil
+    }
+
     @objc private func togglePopover(_ sender: Any?) {
         guard let button = statusItem.button else { return }
         if popover.isShown {
             popover.performClose(sender)
         } else {
+            if popover.contentViewController == nil {
+                popover.contentViewController = makePopoverContent()
+            }
             NSApp.activate(ignoringOtherApps: true)
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
@@ -148,14 +170,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             window.title = "Nova — Sensores"
             window.contentViewController = NSHostingController(
-                rootView: ContentView(vm: vm).environmentObject(settings))
+                rootView: ContentView(vm: vm, ui: windowUI).environmentObject(settings))
             window.isReleasedWhenClosed = false
-            window.center()
+            window.delegate = self
+            if let frame = mainWindowFrame {
+                window.setFrame(frame, display: false)
+            } else {
+                window.center()
+            }
             mainWindow = window
         }
         popover.performClose(nil)
         NSApp.activate(ignoringOtherApps: true)
         mainWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Al cerrar la ventana principal se suelta entera (se recrea al reabrirla)
+    /// para que su vista deje de re-renderizarse y libere memoria.
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === mainWindow else { return }
+        mainWindowFrame = window.frame
+        window.contentViewController = nil
+        mainWindow = nil
     }
 
     /// Abre (o trae al frente) la ventana de preferencias.

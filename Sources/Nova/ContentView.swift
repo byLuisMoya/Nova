@@ -7,22 +7,15 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var vm: ThermalViewModel
     @EnvironmentObject var settings: AppSettings
-    @State private var tab: Tab = .temperature
-
-    enum Tab: Hashable { case temperature, power }
+    @ObservedObject var ui: MenuBarPopoverView.UIState
 
     var body: some View {
         VStack(spacing: 0) {
             toolbar
             Divider()
-            Picker("", selection: $tab) {
-                Label("Temperatura", systemImage: "thermometer.medium").tag(Tab.temperature)
-                Label("Potencia", systemImage: "bolt.fill").tag(Tab.power)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            MenuBarPopoverView.TabPicker(tab: $ui.tab)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
             Divider()
 
             if let error = vm.errorMessage {
@@ -31,7 +24,7 @@ struct ContentView: View {
                 ProgressView("Leyendo sensores…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                switch tab {
+                switch ui.tab {
                 case .temperature: temperatureTab
                 case .power:       PowerTab(vm: vm)
                 }
