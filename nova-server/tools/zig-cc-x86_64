@@ -1,0 +1,8 @@
+#!/bin/sh
+# Compilador C para x86_64-linux-musl (zig trae las cabeceras de musl). Quita el --target
+# al estilo Rust que añade el crate cc, que zig no entiende.
+for arg; do
+    shift
+    case "$arg" in --target=*) ;; *) set -- "$@" "$arg" ;; esac
+done
+exec zig cc -target x86_64-linux-musl "$@"

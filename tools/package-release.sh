@@ -47,10 +47,6 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
     <key>LSUIElement</key>                   <true/>
     <key>NSHighResolutionCapable</key>       <true/>
     <key>NSLocalNetworkUsageDescription</key> <string>Nova lee las métricas de los servidores que configuras en servers.json.</string>
-    <key>NSAppTransportSecurity</key>
-    <dict>
-        <key>NSAllowsLocalNetworking</key>   <true/>
-    </dict>
     <key>NSPrincipalClass</key>              <string>NSApplication</string>
 </dict>
 </plist>

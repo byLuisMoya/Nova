@@ -1,4 +1,5 @@
-# Binarios Linux estáticos (musl) compilados desde el Mac con el enlazador que trae Rust.
+# Binarios Linux estáticos (musl) compilados desde el Mac: enlaza rust-lld y el C de ring
+# (criptografía de rustls) lo compila zig, que trae las cabeceras de musl.
 [target.x86_64-unknown-linux-musl]
 linker = "rust-lld"
 rustflags = ["-C", "linker-flavor=ld.lld"]
@@ -6,3 +7,9 @@ rustflags = ["-C", "linker-flavor=ld.lld"]
 [target.aarch64-unknown-linux-musl]
 linker = "rust-lld"
 rustflags = ["-C", "linker-flavor=ld.lld"]
+
+[env]
+CC_x86_64_unknown_linux_musl = { value = "tools/zig-cc-x86_64", relative = true }
+AR_x86_64_unknown_linux_musl = { value = "tools/zig-ar", relative = true }
+CC_aarch64_unknown_linux_musl = { value = "tools/zig-cc-aarch64", relative = true }
+AR_aarch64_unknown_linux_musl = { value = "tools/zig-ar", relative = true }

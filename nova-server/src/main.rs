@@ -1,23 +1,24 @@
-//! nova-server: publica en HTTP+JSON las métricas de un servidor Linux para que Nova las muestre en el Mac.
+//! nova-server: publica por HTTPS (TLS 1.3) las métricas de un servidor Linux para que Nova las muestre en el Mac.
 //!
 //! Solo lectura. Corre como root (systemd) para poder leer RAPL, SMART y Docker.
 //! Rutas: `GET /health` (sin token), `GET /api/v1/snapshot` y `GET /api/v1/history?range=30m|24h`.
 
 mod fast;
 mod history;
+mod http;
 mod model;
 mod slow;
 mod sys;
+mod tls;
 
 use history::History;
 use model::{Config, Disk, Fast, Slow, Snapshot};
 use std::collections::BTreeMap;
-use std::net::IpAddr;
+use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use tiny_http::{Header, Response, Server};
 
 const SAMPLE_EVERY: Duration = Duration::from_secs(5);
 const SLOW_EVERY: Duration = Duration::from_secs(30);
@@ -83,63 +84,24 @@ fn snapshot(state: &Shared) -> Snapshot {
     }
 }
 
-fn authorized(header: Option<&str>, token: &str) -> bool {
-    let expected = format!("Bearer {token}");
-    let given = header.unwrap_or("").as_bytes();
-    given.len() == expected.len() && given.iter().zip(expected.as_bytes()).fold(0u8, |acc, (a, b)| acc | (a ^ b)) == 0
+fn json(status: u16, body: &impl serde::Serialize) -> http::Response {
+    http::Response { status, body: serde_json::to_vec(body).unwrap_or_else(|_| b"{}".to_vec()) }
 }
 
-fn json_response(code: u16, body: &impl serde::Serialize) -> Response<std::io::Cursor<Vec<u8>>> {
-    let payload = serde_json::to_vec(body).unwrap_or_else(|_| b"{}".to_vec());
-    Response::from_data(payload)
-        .with_status_code(code)
-        .with_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap())
-        .with_header(Header::from_bytes(&b"Cache-Control"[..], &b"no-store"[..]).unwrap())
-}
-
-/// LAN (RFC 1918), Tailscale/CGNAT (100.64.0.0/10), loopback, enlace local e IPv6 privadas.
-fn is_private(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => {
-            let o = v4.octets();
-            v4.is_private() || v4.is_loopback() || v4.is_link_local() || (o[0] == 100 && (o[1] & 0xc0) == 64)
-        }
-        IpAddr::V6(v6) => {
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                return is_private(IpAddr::V4(v4));
-            }
-            let first = v6.segments()[0];
-            v6.is_loopback() || (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80
-        }
+fn route(request: &http::Request, state: &Shared, token: &str) -> http::Response {
+    if request.path == "/health" {
+        return json(200, &serde_json::json!({ "ok": true }));
     }
-}
-
-fn serve(server: &Server, state: Shared, token: String, allow_public: bool) {
-    for request in server.incoming_requests() {
-        if !allow_public && !request.remote_addr().is_some_and(|a| is_private(a.ip())) {
-            let _ = request.respond(json_response(403, &serde_json::json!({ "error": "forbidden" })));
-            continue;
+    if !http::authorized(request.authorization.as_deref(), token) {
+        return json(401, &serde_json::json!({ "error": "unauthorized" }));
+    }
+    match request.path.as_str() {
+        "/api/v1/snapshot" => json(200, &snapshot(state)),
+        "/api/v1/history" => {
+            let long = !request.query.split('&').any(|kv| kv == "range=30m");
+            json(200, &lock(state).history.series(long))
         }
-        let url = request.url().to_string();
-        let (path, query) = url.split_once('?').unwrap_or((&url, ""));
-        let auth = request
-            .headers()
-            .iter()
-            .find(|h| h.field.equiv("Authorization"))
-            .map(|h| h.value.as_str().to_string());
-        let response = if path == "/health" {
-            json_response(200, &serde_json::json!({ "ok": true }))
-        } else if !authorized(auth.as_deref(), &token) {
-            json_response(401, &serde_json::json!({ "error": "unauthorized" }))
-        } else if path == "/api/v1/snapshot" {
-            json_response(200, &snapshot(&state))
-        } else if path == "/api/v1/history" {
-            let long = !query.split('&').any(|kv| kv == "range=30m");
-            json_response(200, &lock(&state).history.series(long))
-        } else {
-            json_response(404, &serde_json::json!({ "error": "not found" }))
-        };
-        let _ = request.respond(response);
+        _ => json(404, &serde_json::json!({ "error": "not found" })),
     }
 }
 
@@ -151,7 +113,14 @@ fn main() {
         Ok(Err(e)) => return eprintln!("{config_path}: JSON no válido: {e}"),
         Err(e) => return eprintln!("{config_path}: {e}"),
     };
+    if config.token.len() < 32 {
+        return eprintln!("{config_path}: el token es demasiado corto (mínimo 32 caracteres)");
+    }
     let _ = std::fs::create_dir_all(&state_dir);
+    let identity = match tls::load_or_create(&state_dir) {
+        Ok(i) => i,
+        Err(e) => return eprintln!("certificado TLS: {e}"),
+    };
     let history_path = format!("{state_dir}/history.json");
     let state: Shared = Arc::new(Mutex::new(State { history: History::load(&history_path), ..State::default() }));
 
@@ -201,23 +170,21 @@ fn main() {
     }
 
     let addr = format!("{}:{}", config.bind, config.port);
-    let server = match Server::http(&addr) {
-        Ok(s) => s,
+    let listener = match TcpListener::bind(&addr) {
+        Ok(l) => l,
         Err(e) => return eprintln!("no se pudo escuchar en {addr}: {e}"),
     };
-    println!("nova-server escuchando en {addr}");
-    let server = Arc::new(server);
+    println!("nova-server escuchando en https://{addr} (huella {})", identity.fingerprint);
     {
-        let server = server.clone();
         let state = state.clone();
         let token = config.token.clone();
+        let tls_config = identity.config.clone();
         let allow_public = config.allow_public;
-        thread::spawn(move || serve(&server, state, token, allow_public));
+        thread::spawn(move || http::serve(listener, tls_config, allow_public, move |r| route(r, &state, &token)));
     }
 
     while !STOP.load(Ordering::SeqCst) {
         thread::sleep(Duration::from_millis(250));
     }
     lock(&state).history.save(&history_path);
-    server.unblock();
 }

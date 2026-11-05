@@ -47,16 +47,12 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
     <key>CFBundleIconFile</key>              <string>AppIcon</string>
     <key>CFBundleIdentifier</key>            <string>io.github.byluismoya.Nova</string>
     <key>CFBundlePackageType</key>           <string>APPL</string>
-    <key>CFBundleShortVersionString</key>    <string>1.5</string>
-    <key>CFBundleVersion</key>               <string>1.5</string>
+    <key>CFBundleShortVersionString</key>    <string>1.6</string>
+    <key>CFBundleVersion</key>               <string>1.6</string>
     <key>LSMinimumSystemVersion</key>        <string>13.0</string>
     <key>LSUIElement</key>                   <true/>
     <key>NSHighResolutionCapable</key>       <true/>
     <key>NSLocalNetworkUsageDescription</key> <string>Nova lee las métricas de los servidores que configuras en servers.json.</string>
-    <key>NSAppTransportSecurity</key>
-    <dict>
-        <key>NSAllowsLocalNetworking</key>   <true/>
-    </dict>
     <key>NSPrincipalClass</key>              <string>NSApplication</string>
 </dict>
 </plist>

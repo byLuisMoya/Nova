@@ -9,6 +9,8 @@
 #   ~/.nova-server-port            (el puerto, sin secreto)
 # Reinstalar conserva el token. Para cambiarlo: borra config.json y vuelve a instalar.
 #
+# Al arrancar, el agente genera su certificado TLS en /var/lib/nova-server (clave solo root) y deja
+# su huella en /var/lib/nova-server/fingerprint, que el Mac fija al emparejar.
 # El agente solo atiende a IPs privadas (LAN, Tailscale, loopback) aunque no haya firewall.
 #
 # Variables opcionales (con sudo hay que pasarlas detrás: sudo NOVA_SERVER_PORT=9000 sh install.sh):
@@ -73,6 +75,9 @@ if command -v ufw >/dev/null && ufw status | grep -q 'Status: active'; then
     fi
 fi
 
-sleep 1
+FINGERPRINT_FILE=/var/lib/nova-server/fingerprint
+i=0
+while [ ! -s "$FINGERPRINT_FILE" ] && [ $i -lt 20 ]; do sleep 0.5; i=$((i + 1)); done
 systemctl --no-pager --lines=3 status nova-server.service || true
-echo "nova-server instalado en el puerto $PORT."
+[ -s "$FINGERPRINT_FILE" ] || { echo "nova-server no ha generado su certificado: journalctl -u nova-server"; exit 1; }
+echo "nova-server instalado en https, puerto $PORT. Huella del certificado: $(cat "$FINGERPRINT_FILE")"

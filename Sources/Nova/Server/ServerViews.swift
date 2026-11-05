@@ -24,6 +24,8 @@ struct ServerPanelView: View {
                 }
                 .opacity(store.online ? 1 : 0.45)
                 ServerServicePills(services: s.services ?? [], online: store.online)
+            } else if let problem = store.problem {
+                ServerMessage(icon: "lock.trianglebadge.exclamationmark", title: "Conexión no segura rechazada", detail: problem)
             } else if store.connecting {
                 ServerMessage(icon: "antenna.radiowaves.left.and.right", title: "Conectando…", detail: nil)
             } else {
@@ -58,6 +60,7 @@ struct ServerHeader: View {
     /// Cadena estática (sin `TimelineView`): un texto que se refresca cada segundo re-renderiza
     /// el desplegable entero y cierra los tooltips.
     private var status: String {
+        if store.problem != nil { return "conexión rechazada" }
         if store.connecting { return "conectando…" }
         guard let last = store.lastOK else { return "sin conexión" }
         let time = Self.timeFormatter.string(from: last)
@@ -66,10 +69,10 @@ struct ServerHeader: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(LinearGradient(colors: [.blue, .blue.opacity(0.75)], startPoint: .top, endPoint: .bottom))
-                .frame(width: 36, height: 36)
-                .overlay(Image(systemName: "server.rack").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white))
+            Image(systemName: "server.rack")
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(.primary)
+                .frame(width: 28, height: 36)
             VStack(alignment: .leading, spacing: 1) {
                 Text(store.snapshot?.host ?? store.name).font(.headline)
                 Text(status).font(.caption).foregroundStyle(store.online ? Color.secondary : Color.orange)

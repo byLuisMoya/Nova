@@ -5,7 +5,7 @@
 #
 # 1. Compila nova-server para la arquitectura del servidor (binario estático musl).
 # 2. Lo copia a ~/nova-server/ del servidor y ejecuta el instalador con sudo (pide la contraseña).
-# 3. Lee el token que ha generado el servidor y añade el servidor a
+# 3. Lee por SSH el token y la huella del certificado TLS que ha generado el servidor y los añade a
 #    ~/Library/Application Support/Nova/servers.json (permisos 600). El token no se imprime.
 set -eu
 PAIR_ONLY=false
@@ -30,6 +30,7 @@ case "$(remote uname -m)" in
     *) echo "Arquitectura no soportada: $(remote uname -m)"; exit 1 ;;
 esac
 
+command -v zig >/dev/null || { echo "Falta zig para compilar la parte criptográfica: brew install zig"; exit 1; }
 echo "==> Compilando nova-server ($TRIPLE)..."
 command -v rustup >/dev/null && rustup target add "$TRIPLE" >/dev/null
 cargo build --release --target "$TRIPLE"
@@ -52,15 +53,24 @@ echo "==> Emparejando con Nova..."
 NAME=$(remote hostname)
 AGENT_PORT=$(remote 'cat ~/.nova-server-port 2>/dev/null' || true)
 TAILSCALE_IP=$(remote "ip -4 -o addr show tailscale0 2>/dev/null | awk '{print \$4}' | cut -d/ -f1" || true)
-# Nova consulta por IP: un nombre con dominio no pasaría ATS (solo admite HTTP a IPs y nombres locales).
+# La IP de la LAN que usa el propio servidor, para no depender de alias de ~/.ssh/config.
 LAN_IP=$(remote "ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if (\$i == \"src\") { print \$(i + 1); exit }}'" || true)
+is_ipv4() { echo "$1" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; }
+is_ipv4 "$LAN_IP" || LAN_IP=
+[ -z "$TAILSCALE_IP" ] || is_ipv4 "$TAILSCALE_IP" || TAILSCALE_IP=
+case "$AGENT_PORT" in '' | *[!0-9]*) AGENT_PORT=8765 ;; esac
 HOST=${LAN_IP:-$SSH_HOST}
+FINGERPRINT=$(remote 'cat /var/lib/nova-server/fingerprint 2>/dev/null' | tr -d '[:space:]')
+case "$FINGERPRINT" in
+    *[!0-9a-f]* | '') echo "No encuentro la huella del certificado en el servidor: reinstala con ./deploy.sh $TARGET"; exit 1 ;;
+esac
+[ ${#FINGERPRINT} -eq 64 ] || { echo "Huella del certificado no válida: $FINGERPRINT"; exit 1; }
 NOVA_SERVER_TOKEN=$(remote 'cat ~/.nova-server-token') || {
     echo "No encuentro ~/.nova-server-token en el servidor: instala primero con ./deploy.sh $TARGET"; exit 1; }
 export NOVA_SERVER_TOKEN
-python3 -I - "$NAME" "$HOST" "${AGENT_PORT:-8765}" "$TAILSCALE_IP" "ssh://$SSH_USER@$SSH_HOST:$SSH_PORT" <<'PY'
+python3 -I - "$NAME" "$HOST" "${AGENT_PORT:-8765}" "$TAILSCALE_IP" "ssh://$SSH_USER@$SSH_HOST:$SSH_PORT" "$FINGERPRINT" <<'PY'
 import json, os, sys
-name, host, port, tailscale, ssh = sys.argv[1:6]
+name, host, port, tailscale, ssh, fingerprint = sys.argv[1:7]
 path = os.path.expanduser("~/Library/Application Support/Nova/servers.json")
 os.makedirs(os.path.dirname(path), exist_ok=True)
 try:
@@ -68,14 +78,14 @@ try:
         data = json.load(f)
 except FileNotFoundError:
     data = {"servers": []}
-hosts = [f"http://{host}:{port}"] + ([f"http://{tailscale}:{port}"] if tailscale and tailscale != host else [])
-entry = {"name": name, "hosts": hosts, "token": os.environ["NOVA_SERVER_TOKEN"], "ssh": ssh}
+hosts = [f"https://{host}:{port}"] + ([f"https://{tailscale}:{port}"] if tailscale and tailscale != host else [])
+entry = {"name": name, "hosts": hosts, "token": os.environ["NOVA_SERVER_TOKEN"], "fingerprint": fingerprint, "ssh": ssh}
 data["servers"] = [s for s in data.get("servers", []) if s.get("name") != name] + [entry]
 fd = os.open(path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
 with os.fdopen(fd, "w") as f:
     json.dump(data, f, indent=2, ensure_ascii=False)
 os.replace(path + ".tmp", path)
-print(f"Añadido «{name}» ({', '.join(hosts)}) a {path}")
+print(f"Añadido «{name}» ({', '.join(hosts)}, huella {fingerprint[:16]}…) a {path}")
 PY
 unset NOVA_SERVER_TOKEN
 

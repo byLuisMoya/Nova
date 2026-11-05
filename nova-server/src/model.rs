@@ -165,7 +165,7 @@ pub struct Config {
     #[serde(default)]
     pub allow_public: bool,
     /// Envía la línea de comandos completa de cada proceso. Por defecto solo el ejecutable,
-    /// porque los argumentos pueden llevar secretos (`--password=…`) y el tráfico va sin cifrar.
+    /// porque los argumentos pueden llevar secretos (`--password=…`).
     #[serde(default)]
     pub full_commands: bool,
 }

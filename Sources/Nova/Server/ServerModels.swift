@@ -89,9 +89,11 @@ struct ServerSeries: Decodable {
 struct ServerConfig: Codable, Identifiable {
     /// Nombre visible (selector e icono de la barra de menú).
     var name: String
-    /// URLs base del agente, por orden de preferencia (p. ej. la IP local y la de Tailscale).
+    /// URLs base `https://` del agente, por orden de preferencia (p. ej. la IP local y la de Tailscale).
     var hosts: [String]
     var token: String
+    /// SHA-256 (hex) del certificado del servidor. Nova solo acepta ese certificado.
+    var fingerprint: String?
     /// URL `ssh://usuario@host:puerto` que abre el botón de terminal.
     var ssh: String?
 

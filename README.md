@@ -166,7 +166,7 @@ launchctl print "gui/$(id -u)/io.github.byluismoya.Nova" | grep -E 'state|pid'
 ## Servidores remotos (nova-server)
 
 Nova también puede vigilar servidores Linux. Cada servidor corre **nova-server**, un
-agente en Rust de solo lectura que publica sus métricas por HTTP, y Nova las consulta
+agente en Rust de solo lectura que publica sus métricas por HTTPS, y Nova las consulta
 cada 5 s.
 
 - **Barra de menú:** mientras un servidor responde, su CPU aparece junto a la
@@ -184,9 +184,13 @@ cada 5 s.
 
 ### Instalar un servidor
 
-Requisitos: en el Mac, Rust (`rustup`) con el target del servidor, que `deploy.sh`
-añade solo. En el servidor, Linux con systemd y acceso por SSH con `sudo`. No hace
-falta Rust en el servidor: el binario se compila estático (musl) desde el Mac.
+Requisitos:
+
+- **En el Mac:** Rust (`rustup`) y [zig](https://ziglang.org) (`brew install zig`).
+  Zig compila la parte en C de la criptografía (`ring`) para Linux. El target de Rust
+  del servidor lo añade `deploy.sh` solo.
+- **En el servidor:** Linux con systemd y acceso por SSH con `sudo`. No hace falta Rust:
+  el binario se compila estático (musl) desde el Mac.
 
 ```bash
 cd nova-server
@@ -198,11 +202,12 @@ cd nova-server
    la contraseña. El instalador:
    - deja el servicio `nova-server` activado, de modo que arranca con la máquina y se
      reinicia si falla;
+   - espera a que el agente genere su certificado TLS y muestra su huella;
    - instala `smartmontools` si falta;
    - si UFW está activo, abre el puerto solo a la LAN y a Tailscale.
-3. Empareja este Mac: lee el token del servidor por SSH y añade el servidor a
-   `~/Library/Application Support/Nova/servers.json` (permisos `600`). Después
-   reinicia Nova.
+3. Empareja este Mac: lee por SSH el token y la huella del certificado del servidor y
+   los añade a `~/Library/Application Support/Nova/servers.json` (permisos `600`).
+   Después reinicia Nova.
 
 No hay que copiar tokens ni editar ficheros. Lo único que pide una persona son las
 contraseñas:
@@ -213,7 +218,7 @@ contraseñas:
 **Después de emparejar no se usa SSH.** `deploy.sh` usa el `sshd` que el servidor ya
 tiene y cierra la conexión al terminar; la que reutiliza para no pedir la contraseña
 varias veces se cierra sola a los 2 minutos. A partir de ahí Nova solo habla con
-`nova-server` por HTTP, con el token. En el servidor no queda escuchando nada más que
+`nova-server` por HTTPS, con el token. En el servidor no queda escuchando nada más que
 `nova-server`.
 
 SSH vuelve a hacer falta solo para:
@@ -228,13 +233,8 @@ en su terminal. La forma más cómoda es que el servidor acepte la clave SSH del
 el agente compila, copia y empareja solo, y el usuario únicamente teclea la contraseña
 de `sudo` en el paso de instalación.
 
-Nova consulta los servidores siempre por IP, la de la LAN y la de Tailscale si la hay.
-`deploy.sh` las pregunta al propio servidor, así que da igual usar un alias de
-`~/.ssh/config`.
-
-La IP hace falta por ATS: macOS solo permite HTTP sin cifrar hacia IPs y nombres
-locales. Si editas `servers.json` a mano y pones un nombre con dominio
-(`nas.example.com`), el servidor aparecerá siempre como apagado.
+`deploy.sh` guarda la IP de la LAN del servidor y la de Tailscale si la hay. Las
+pregunta al propio servidor, así que da igual usar un alias de `~/.ssh/config`.
 
 Para usar otro puerto: `NOVA_SERVER_PORT=9000 ./deploy.sh usuario@servidor`. Si el
 servidor ya estaba instalado, también cambia su puerto.
@@ -249,15 +249,24 @@ Para quitarlo, en el servidor: `sudo sh ~/nova-server/uninstall.sh`.
   `/etc/nova-server/config.json` (solo root). También deja una copia en
   `~/.nova-server-token` (solo el usuario que ejecutó `sudo`), de donde la lee el
   emparejamiento.
-- **Reinstalar conserva el token.** Para rotarlo, borra `/etc/nova-server/config.json`,
-  vuelve a instalar y empareja de nuevo.
+- **Reinstalar conserva el token y el certificado.** Para rotar el token, borra
+  `/etc/nova-server/config.json`; para rotar el certificado, borra
+  `/var/lib/nova-server/cert.der` y `key.der`. En los dos casos, después reinstala y
+  empareja de nuevo. El agente no arranca con un token de menos de 32 caracteres.
 - **En el Mac, el token solo está en `servers.json`.** El emparejamiento no lo imprime
   ni lo pasa por argumentos de línea de comandos.
-- **Todas las rutas piden `Authorization: Bearer <token>` salvo `GET /health`.**
-- **El agente solo responde a IPs privadas** (LAN, Tailscale, loopback), aunque el
-  servidor no tenga firewall. A cualquier otra devuelve `403`.
-- **El tráfico es HTTP sin cifrar.** Está pensado para la LAN o para Tailscale, que ya
-  cifra.
+- **El tráfico va cifrado con TLS 1.3 y el certificado está fijado.**
+  - El agente genera su propio certificado (ECDSA P-256) la primera vez que arranca.
+    La clave privada queda en `/var/lib/nova-server/key.der` y solo la lee root.
+  - El Mac guarda la huella SHA-256 del certificado, que obtiene por SSH al emparejar.
+  - Nova solo acepta ese certificado, así que nadie de tu red puede leer el token ni
+    hacerse pasar por el servidor.
+  - Nova no habla HTTP sin cifrar: ignora los hosts `http://`, y si el certificado
+    cambia rechaza la conexión y pide volver a emparejar.
+- **Todas las rutas piden `Authorization: Bearer <token>` salvo `GET /health`.** Un
+  token incorrecto recibe `401` tras una pausa de medio segundo.
+- **El agente solo atiende a IPs privadas** (LAN, Tailscale, loopback), aunque el
+  servidor no tenga firewall. Cualquier otra conexión se cierra antes del saludo TLS.
 - **De cada proceso solo se envía el ejecutable**, sin argumentos, porque los
   argumentos pueden llevar contraseñas.
 
@@ -268,8 +277,9 @@ Para quitarlo, en el servidor: `sudo sh ~/nova-server/uninstall.sh`.
   "servers": [
     {
       "name": "mi-servidor",
-      "hosts": ["http://192.168.1.10:8765", "http://100.64.0.10:8765"],
+      "hosts": ["https://192.168.1.10:8765", "https://100.64.0.10:8765"],
       "token": "…",
+      "fingerprint": "64 caracteres hexadecimales: SHA-256 del certificado",
       "ssh": "ssh://usuario@192.168.1.10:22"
     }
   ]
@@ -277,7 +287,9 @@ Para quitarlo, en el servidor: `sudo sh ~/nova-server/uninstall.sh`.
 ```
 
 - `hosts` se prueban en orden y se recuerda el último que respondió. Normalmente son
-  la IP de la LAN y la de Tailscale.
+  la IP de la LAN y la de Tailscale. Solo valen los `https://`.
+- `fingerprint` es la huella del certificado que se acepta. En el servidor está en
+  `/var/lib/nova-server/fingerprint`.
 - `ssh` es lo que abre el botón de terminal.
 - Nova lee el fichero al arrancar, así que hay que reiniciarla tras editarlo.
 
