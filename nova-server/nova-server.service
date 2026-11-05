@@ -1,0 +1,17 @@
+[Unit]
+Description=nova-server (métricas del servidor para Nova en el Mac)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/nova-server
+Restart=always
+RestartSec=5
+StateDirectory=nova-server
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

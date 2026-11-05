@@ -8,20 +8,22 @@ import CIOKitHID
 ///
 /// El tooltip nativo se cierra en cuanto el `NSHostingView` recibe una
 /// actualización de SwiftUI, y como los datos se refrescan cada 2 s parpadea.
-/// Aquí la visibilidad la controla un `@State` de hover que el refresco de datos
+/// Aquí la visibilidad la controla un estado de hover propio que el refresco de datos
 /// NO toca, así que una vez abierto se queda hasta que el ratón sale del icono.
 struct InfoHint: View {
     let info: String
     var compact: Bool = false
 
-    @State private var show = false
+    @StateObject private var hover = Hover()
+
+    final class Hover: ObservableObject { @Published var show = false }
 
     var body: some View {
         Image(systemName: "questionmark.circle")
             .font(compact ? .caption2 : .caption)
-            .foregroundStyle(show ? Color.accentColor : Color.secondary)
-            .onHover { hovering in show = hovering }
-            .popover(isPresented: $show, arrowEdge: .bottom) {
+            .foregroundStyle(hover.show ? Color.accentColor : Color.secondary)
+            .onHover { hovering in hover.show = hovering }
+            .popover(isPresented: $hover.show, arrowEdge: .bottom) {
                 Text(info)
                     .font(.caption)
                     .multilineTextAlignment(.leading)

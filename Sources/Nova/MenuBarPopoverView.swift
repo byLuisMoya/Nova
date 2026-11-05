@@ -13,8 +13,14 @@ struct MenuBarPopoverView: View {
     var onPreferences: () -> Void
     var onQuit: () -> Void
 
-    @State private var showLaunchHint = false
-    @State private var showUpdateHint = false
+    @StateObject private var hints = HintVisibility()
+
+    /// Visibilidad de los avisos de la cabecera. Un `ObservableObject` y no `@State`: `@State`
+    /// es una macro en los SDK recientes y las Command Line Tools no traen su plugin.
+    final class HintVisibility: ObservableObject {
+        @Published var launch = false
+        @Published var update = false
+    }
 
     enum Tab: Hashable { case temperature, power }
 
@@ -25,6 +31,7 @@ struct MenuBarPopoverView: View {
     final class UIState: ObservableObject {
         @Published var tab: Tab = .temperature
         @Published var showAll = false
+        @Published var machine: Machine = .local
     }
 
     /// Selector de pestaña en su propia vista: no depende del ViewModel, así
@@ -226,9 +233,9 @@ struct MenuBarPopoverView: View {
             // Naranja vivo (con toque rojo) en claro, para que resalte sobre el
             // fondo claro sin apagarse; naranja del sistema en oscuro.
             .foregroundStyle(Color(light: Color(red: 0.91, green: 0.35, blue: 0.05), dark: .orange))
-            .onHover { hovering in showLaunchHint = hovering }
+            .onHover { hovering in hints.launch = hovering }
             .onTapGesture { onPreferences() }
-            .popover(isPresented: $showLaunchHint, arrowEdge: .bottom) {
+            .popover(isPresented: $hints.launch, arrowEdge: .bottom) {
                 Text("Nova no se iniciará automáticamente al encender el equipo. "
                      + "Actívalo en Preferencias (\u{2699}\u{FE0E}) → “Abrir al iniciar sesión”.")
                     .font(.caption)
@@ -245,9 +252,9 @@ struct MenuBarPopoverView: View {
         Image(systemName: "arrow.down.circle.fill")
             .font(.caption)
             .foregroundStyle(Color.accentColor)
-            .onHover { hovering in showUpdateHint = hovering }
+            .onHover { hovering in hints.update = hovering }
             .onTapGesture { NSWorkspace.shared.open(updates.releaseURL) }
-            .popover(isPresented: $showUpdateHint, arrowEdge: .bottom) {
+            .popover(isPresented: $hints.update, arrowEdge: .bottom) {
                 Text("Hay una versión nueva de Nova (\(version)). Actualiza con "
                      + "«brew upgrade» si la instalaste con Homebrew, o con «git pull» "
                      + "y «./install.sh» desde el repositorio. Clic para ver la release.")

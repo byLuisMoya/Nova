@@ -19,6 +19,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     private let popoverUI = MenuBarPopoverView.UIState()
     private let windowUI = MenuBarPopoverView.UIState()
     private var cancellables = Set<AnyCancellable>()
+    /// Servidores de `servers.json`. Cada uno que responda añade su tramo al final del título.
+    private var servers: [ServerStore] = []
+    /// Ancho de cada tramo de servidor del título, en el orden en que aparecen, para saber
+    /// sobre qué máquina se ha hecho clic.
+    private var serverSegments: [(id: String, width: CGFloat)] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // --- Item de la barra de menú (junto a la batería) ---
@@ -49,7 +54,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.updateStatusTitle() }
             .store(in: &cancellables)
+        setUpServers()
         updateStatusTitle()
+    }
+
+    // MARK: - Servidores remotos
+
+    /// Arranca el sondeo de cada servidor configurado; su tramo del título se repinta con cada dato.
+    private func setUpServers() {
+        for config in ServerConfig.loadAll() {
+            let store = ServerStore(config: config)
+            servers.append(store)
+            store.$snapshot.combineLatest(store.$online)
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in self?.updateStatusTitle() }
+                .store(in: &cancellables)
+            store.start()
+        }
+    }
+
+    /// `  🖥 3%` por cada servidor que responde, en el color nativo de la barra.
+    private func serverTitleSegments(font: NSFont) -> [(id: String, text: NSAttributedString)] {
+        servers.compactMap { store in
+            guard store.online, let cpu = store.snapshot?.cpu?.percent else { return nil }
+            let text = NSMutableAttributedString(string: "  ", attributes: [.font: font])
+            text.append(NSAttributedString(attachment: Self.serverGlyph(font: font)))
+            text.append(NSAttributedString(string: " \(Int(cpu.rounded()))%",
+                                           attributes: [.font: font, .foregroundColor: NSColor.labelColor]))
+            return (store.id, text)
+        }
+    }
+
+    /// Símbolo `server.rack` para incrustar en el título. Se pinta con `labelColor` al dibujarse,
+    /// porque una imagen dentro de un texto no se tiñe sola como el `image` del botón.
+    private static func serverGlyph(font: NSFont) -> NSTextAttachment {
+        let attachment = NSTextAttachment()
+        let config = NSImage.SymbolConfiguration(pointSize: font.pointSize, weight: .regular)
+        guard let symbol = NSImage(systemSymbolName: "server.rack", accessibilityDescription: "Servidor")?
+            .withSymbolConfiguration(config) else { return attachment }
+        let size = symbol.size
+        attachment.image = NSImage(size: size, flipped: false) { rect in
+            symbol.draw(in: rect)
+            NSColor.labelColor.set()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+        attachment.bounds = CGRect(x: 0, y: (font.capHeight - size.height) / 2, width: size.width, height: size.height)
+        return attachment
     }
 
     private func updateStatusTitle() {
@@ -58,15 +109,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
                                                     weight: .medium)
         let components = vm.menuBarComponents
 
+        let segments = serverTitleSegments(font: font)
+        serverSegments = segments.map { ($0.id, $0.text.size().width) }
+        if !segments.isEmpty {
+            // Con servidores, todo va en un título con atributos: temperatura y servidores en el
+            // mismo item, para que macOS no los separe.
+            let title = NSMutableAttributedString()
+            let lead = components.isEmpty ? "--°" : ""
+            title.append(NSAttributedString(string: " \(lead)", attributes: [.font: font, .foregroundColor: NSColor.labelColor]))
+            if !components.isEmpty {
+                title.append(temperatureTitle(components, font: font))
+            }
+            segments.forEach { title.append($0.text) }
+            button.attributedTitle = title
+            return
+        }
+
         guard !components.isEmpty else {
             button.attributedTitle = NSAttributedString(string: "")
             button.title = " --°"
             return
         }
 
-        // SoC se muestra SIN nombre y en el color nativo de la barra (blanco),
-        // como el resto de iconos. CPU/GPU (si el chip los expone) van con
-        // nombre y coloreados por severidad.
         let hasColored = components.contains { $0.category != .soc }
 
         if !hasColored {
@@ -78,6 +142,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             return
         }
 
+        button.attributedTitle = temperatureTitle(components, font: font)
+    }
+
+    /// Título de temperatura con atributos: SoC sin nombre y en color nativo; CPU/GPU con
+    /// nombre y coloreados por severidad.
+    private func temperatureTitle(_ components: [SensorGroup], font: NSFont) -> NSAttributedString {
         let title = NSMutableAttributedString()
         for (index, group) in components.enumerated() {
             if index > 0 {
@@ -97,7 +167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
                 ]))
             }
         }
-        button.attributedTitle = title
+        return title
     }
 
     /// Escribe el informe de diagnóstico a un archivo y lo revela en el Finder.
@@ -129,13 +199,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     private func makePopoverContent() -> NSViewController {
         // El popover se ajusta al tamaño intrínseco de la vista SwiftUI, así que
         // la altura se adapta a los sensores visibles (con un tope, ver la vista).
+        let local = MenuBarPopoverView(vm: vm,
+                                       ui: popoverUI,
+                                       onOpenWindow: { [weak self] in self?.openMainWindow() },
+                                       onDiagnose: { [weak self] in self?.runDiagnostics() },
+                                       onPreferences: { [weak self] in self?.openPreferences() },
+                                       onQuit: { NSApp.terminate(nil) })
+        let root: AnyView
+        if servers.isEmpty {
+            root = AnyView(local)
+        } else {
+            root = AnyView(MachinePopoverView(ui: popoverUI,
+                                              servers: servers,
+                                              local: local,
+                                              onPreferences: { [weak self] in self?.openPreferences() },
+                                              onQuit: { NSApp.terminate(nil) }))
+        }
         let hosting = NSHostingController(
-            rootView: MenuBarPopoverView(vm: vm,
-                                         ui: popoverUI,
-                                         onOpenWindow: { [weak self] in self?.openMainWindow() },
-                                         onDiagnose: { [weak self] in self?.runDiagnostics() },
-                                         onPreferences: { [weak self] in self?.openPreferences() },
-                                         onQuit: { NSApp.terminate(nil) })
+            rootView: root
                 .environmentObject(settings)
                 .environmentObject(UpdateChecker.shared)
         )
@@ -147,18 +228,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         popover.contentViewController = nil
     }
 
+    /// Abre el desplegable en la máquina pulsada (la temperatura o el tramo de un servidor). Si ya
+    /// mostraba esa máquina lo cierra; si mostraba otra, cambia de máquina y se recoloca sin cerrarse.
     @objc private func togglePopover(_ sender: Any?) {
         guard let button = statusItem.button else { return }
-        if popover.isShown {
+        let (machine, anchor) = clickedMachine(in: button)
+        if popover.isShown, popoverUI.machine == machine {
             popover.performClose(sender)
-        } else {
-            if popover.contentViewController == nil {
-                popover.contentViewController = makePopoverContent()
-            }
-            NSApp.activate(ignoringOtherApps: true)
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+            return
         }
+        popoverUI.machine = machine
+        if popover.contentViewController == nil {
+            popover.contentViewController = makePopoverContent()
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        popover.show(relativeTo: anchor, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+    }
+
+    /// Máquina bajo el clic y el rectángulo al que apuntar la flecha del desplegable. Los tramos de
+    /// servidor van al final del título; el margen derecho del botón es aproximado.
+    private func clickedMachine(in button: NSStatusBarButton) -> (Machine, NSRect) {
+        let bounds = button.bounds
+        // Solo un clic de ratón tiene posición fiable; con teclado o VoiceOver se abre este Mac.
+        guard !serverSegments.isEmpty, let event = NSApp.currentEvent,
+              [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp].contains(event.type)
+        else { return (.local, bounds) }
+        let x = button.convert(event.locationInWindow, from: nil).x
+        var right = bounds.maxX - 4
+        for segment in serverSegments.reversed() {
+            let left = right - segment.width
+            if x >= left {
+                return (.server(segment.id), NSRect(x: left, y: bounds.minY, width: segment.width, height: bounds.height))
+            }
+            right = left
+        }
+        return (.local, NSRect(x: bounds.minX, y: bounds.minY, width: right - bounds.minX, height: bounds.height))
     }
 
     /// Abre (o trae al frente) la ventana principal con la lista detallada.

@@ -163,6 +163,152 @@ launchctl print "gui/$(id -u)/io.github.byluismoya.Nova" | grep -E 'state|pid'
 
 ---
 
+## Servidores remotos (nova-server)
+
+Nova también puede vigilar servidores Linux. Cada servidor corre **nova-server**, un
+agente en Rust de solo lectura que publica sus métricas por HTTP, y Nova las consulta
+cada 5 s.
+
+- **Barra de menú:** mientras un servidor responde, su CPU aparece junto a la
+  temperatura del Mac, en el mismo item (`🌡 38°  🖥 3%`). Si no responde, solo se ve
+  la temperatura.
+- **Desplegable:** arriba hay un selector **Este Mac / <servidor>**. Al hacer clic en
+  el tramo del servidor se abre directamente en él. La vista del servidor tiene tres
+  pestañas:
+  - **Sistema:** CPU, temperatura y consumo con gráficas de 30 min o 24 h, memoria,
+    discos, SMART, GPU, carga y eventos.
+  - **Docker:** los contenedores.
+  - **Procesos:** los procesos que más consumen.
+
+  Abajo se ve el estado de los servicios.
+
+### Instalar un servidor
+
+Requisitos: en el Mac, Rust (`rustup`) con el target del servidor, que `deploy.sh`
+añade solo. En el servidor, Linux con systemd y acceso por SSH con `sudo`. No hace
+falta Rust en el servidor: el binario se compila estático (musl) desde el Mac.
+
+```bash
+cd nova-server
+./deploy.sh usuario@servidor [puerto-ssh]
+```
+
+1. Compila nova-server para la arquitectura del servidor (x86_64 o aarch64).
+2. Lo copia a `~/nova-server/` del servidor y ejecuta `sudo sh install.sh`, que te pide
+   la contraseña. El instalador:
+   - deja el servicio `nova-server` activado, de modo que arranca con la máquina y se
+     reinicia si falla;
+   - instala `smartmontools` si falta;
+   - si UFW está activo, abre el puerto solo a la LAN y a Tailscale.
+3. Empareja este Mac: lee el token del servidor por SSH y añade el servidor a
+   `~/Library/Application Support/Nova/servers.json` (permisos `600`). Después
+   reinicia Nova.
+
+No hay que copiar tokens ni editar ficheros. Lo único que pide una persona son las
+contraseñas:
+
+- la de SSH, si el servidor no tiene autorizada la clave del Mac;
+- la de `sudo`, al instalar el servicio.
+
+**Después de emparejar no se usa SSH.** `deploy.sh` usa el `sshd` que el servidor ya
+tiene y cierra la conexión al terminar; la que reutiliza para no pedir la contraseña
+varias veces se cierra sola a los 2 minutos. A partir de ahí Nova solo habla con
+`nova-server` por HTTP, con el token. En el servidor no queda escuchando nada más que
+`nova-server`.
+
+SSH vuelve a hacer falta solo para:
+
+- reinstalar o actualizar el agente;
+- emparejar otro Mac;
+- el botón de terminal del desplegable.
+
+**Con un agente (p. ej. Claude Code):** el agente puede lanzar `deploy.sh`, pero no
+puede escribir contraseñas, así que los avisos de SSH y `sudo` los contesta el usuario
+en su terminal. La forma más cómoda es que el servidor acepte la clave SSH del Mac: así
+el agente compila, copia y empareja solo, y el usuario únicamente teclea la contraseña
+de `sudo` en el paso de instalación.
+
+Nova consulta los servidores siempre por IP, la de la LAN y la de Tailscale si la hay.
+`deploy.sh` las pregunta al propio servidor, así que da igual usar un alias de
+`~/.ssh/config`.
+
+La IP hace falta por ATS: macOS solo permite HTTP sin cifrar hacia IPs y nombres
+locales. Si editas `servers.json` a mano y pones un nombre con dominio
+(`nas.example.com`), el servidor aparecerá siempre como apagado.
+
+Para usar otro puerto: `NOVA_SERVER_PORT=9000 ./deploy.sh usuario@servidor`. Si el
+servidor ya estaba instalado, también cambia su puerto.
+
+Para añadir el mismo servidor a otro Mac: `./deploy.sh --pair usuario@servidor [puerto-ssh]`.
+Para quitarlo, en el servidor: `sudo sh ~/nova-server/uninstall.sh`.
+
+### Credenciales
+
+- **El repositorio no contiene ningún token ni dirección.** Cada servidor genera su
+  token la primera vez que se instala (32 bytes de `/dev/urandom`) y lo guarda en
+  `/etc/nova-server/config.json` (solo root). También deja una copia en
+  `~/.nova-server-token` (solo el usuario que ejecutó `sudo`), de donde la lee el
+  emparejamiento.
+- **Reinstalar conserva el token.** Para rotarlo, borra `/etc/nova-server/config.json`,
+  vuelve a instalar y empareja de nuevo.
+- **En el Mac, el token solo está en `servers.json`.** El emparejamiento no lo imprime
+  ni lo pasa por argumentos de línea de comandos.
+- **Todas las rutas piden `Authorization: Bearer <token>` salvo `GET /health`.**
+- **El agente solo responde a IPs privadas** (LAN, Tailscale, loopback), aunque el
+  servidor no tenga firewall. A cualquier otra devuelve `403`.
+- **El tráfico es HTTP sin cifrar.** Está pensado para la LAN o para Tailscale, que ya
+  cifra.
+- **De cada proceso solo se envía el ejecutable**, sin argumentos, porque los
+  argumentos pueden llevar contraseñas.
+
+### `servers.json`
+
+```json
+{
+  "servers": [
+    {
+      "name": "mi-servidor",
+      "hosts": ["http://192.168.1.10:8765", "http://100.64.0.10:8765"],
+      "token": "…",
+      "ssh": "ssh://usuario@192.168.1.10:22"
+    }
+  ]
+}
+```
+
+- `hosts` se prueban en orden y se recuerda el último que respondió. Normalmente son
+  la IP de la LAN y la de Tailscale.
+- `ssh` es lo que abre el botón de terminal.
+- Nova lee el fichero al arrancar, así que hay que reiniciarla tras editarlo.
+
+### Configuración del agente
+
+`/etc/nova-server/config.json` admite estas claves:
+
+- `port`: el puerto, 8765 por defecto.
+- `bind`: la dirección de escucha, `0.0.0.0` por defecto.
+- `allow_public`: si vale `true`, acepta peticiones desde IPs públicas. Por defecto,
+  `false`.
+- `full_commands`: si vale `true`, envía la línea de comandos completa de cada
+  proceso. Por defecto, `false`.
+- `services`: los servicios que se vigilan. Si falta, se vigilan los conocidos que
+  estén instalados: Docker, CasaOS, Samba, Nginx, Caddy, PostgreSQL, Tailscale y UFW.
+  Cada servicio tiene un `name` y una de estas comprobaciones:
+  - `unit`: una unidad systemd;
+  - `interface`: una interfaz de red;
+  - `"check": "ufw"`: el estado de UFW.
+
+Rutas:
+
+- `GET /health`: no pide token.
+- `GET /api/v1/snapshot`: todos los datos y la historia de 30 min.
+- `GET /api/v1/history?range=24h`: la historia de 24 h, en medias por minuto.
+
+Para leer RAPL, SMART y Docker el agente corre como root. Es de solo lectura, no
+ejecuta nada que llegue por la red y usa en torno a 1 MB de RAM.
+
+---
+
 ## Estructura del proyecto
 
 ```
@@ -183,7 +329,13 @@ nova/
 │       ├── HistoryCharts.swift        # buffer de historial + gráficas (Swift Charts)
 │       ├── AppSettings.swift          # preferencias (unidad °C/°F) + PreferencesView
 │       ├── SensorModels.swift         # sensor, categorías, severidad/color
-│       └── Diagnostics.swift          # informe de sensores (--dump / botón 🩺)
+│       ├── Diagnostics.swift          # informe de sensores (--dump / botón 🩺)
+│       └── Server/                    # servidores remotos: modelos, sondeo y vistas
+├── nova-server/                       # agente en Rust para servidores Linux
+│   ├── src/                           #   métricas de /proc, /sys, docker, smartctl
+│   ├── deploy.sh                      #   compila, instala y empareja desde el Mac
+│   ├── install.sh / uninstall.sh      #   servicio systemd (se ejecutan en el servidor)
+│   └── nova-server.service
 ├── Resources/AppIcon.icns             # icono del bundle (.app)
 ├── tools/
 │   ├── make-icon.swift                # dibuja el icono "Nova" (varios estilos)
