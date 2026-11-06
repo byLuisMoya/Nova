@@ -75,4 +75,15 @@ int NovaFanCount(void);
 /// Devuelve -1.0 si no se puede leer.
 double NovaFanRPM(int index);
 
+/// Lectura de una clave de temperatura del SMC (°C).
+typedef struct {
+    char   key[5];  // clave SMC de 4 letras, terminada en NUL (p. ej. "Tp00")
+    double value;   // grados Celsius
+} NovaSMCTemperature;
+
+/// Lee las temperaturas de CPU (claves Tp*/Te*: núcleos P/E) y GPU (Tg*) del
+/// SMC. Escribe hasta `capacity` lecturas en `out` y devuelve cuántas escribió
+/// (0 si el SMC no está accesible o el chip no publica esas claves).
+int NovaReadSMCTemperatures(NovaSMCTemperature *out, int capacity);
+
 #endif /* CIOKitHID_h */

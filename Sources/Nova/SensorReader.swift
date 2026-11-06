@@ -34,9 +34,36 @@ enum SensorReader {
     private static var services: [Service] = []
     private static let lock = NSLock()
 
-    /// Lee todos los sensores de temperatura disponibles.
-    /// Devuelve un array vacío si no hay sensores (o si hubiese sandbox).
+    /// Lee todos los sensores de temperatura disponibles: los HID y las claves
+    /// de CPU/GPU del SMC. Devuelve un array vacío si no hay sensores (o si
+    /// hubiese sandbox).
     static func readTemperatureSensors() -> [RawSensor] {
+        readHIDSensors() + readSMCSensors()
+    }
+
+    /// Temperaturas de CPU (núcleos P/E) y GPU desde el SMC. En chips como el
+    /// M5 base, HID solo publica dies globales del SoC y la CPU solo se ve aquí.
+    /// El nombre lleva "CPU"/"GPU" para que `SensorCategory.classify` lo agrupe.
+    private static func readSMCSensors() -> [RawSensor] {
+        var buffer = [NovaSMCTemperature](repeating: NovaSMCTemperature(), count: 256)
+        let n = Int(NovaReadSMCTemperatures(&buffer, Int32(buffer.count)))
+        return buffer.prefix(max(0, n)).compactMap { t in
+            let key = withUnsafeBytes(of: t.key) { raw in
+                String(decoding: raw.prefix(4), as: UTF8.self)
+            }
+            let label: String
+            switch key.dropFirst().first {
+            case "p": label = "CPU P-core"
+            case "e": label = "CPU E-core"
+            case "g": label = "GPU"
+            default:  return nil
+            }
+            guard t.value.isFinite, t.value > 0, t.value < 150 else { return nil }
+            return RawSensor(name: "\(label) \(key)", value: t.value)
+        }
+    }
+
+    private static func readHIDSensors() -> [RawSensor] {
         lock.lock()
         defer { lock.unlock() }
 

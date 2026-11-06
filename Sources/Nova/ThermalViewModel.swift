@@ -154,12 +154,11 @@ final class ThermalViewModel: ObservableObject {
 
     // MARK: - Derivados para la barra de menú
 
-    /// Componentes que se muestran por separado en la barra de menú, en orden
-    /// CPU → GPU → SoC. Solo se incluyen los que tienen sensores (p. ej. en un
-    /// M5 base solo existe SoC). Cada grupo agrega sus sensores por el máximo.
+    /// Componente que se muestra en la barra de menú: la CPU (máximo de sus
+    /// núcleos P/E). Solo si el chip no publica sensores de CPU se cae al SoC.
+    /// GPU y SoC siguen visibles en el desplegable.
     var menuBarComponents: [SensorGroup] {
-        [SensorCategory.cpu, .gpu, .soc].compactMap { category in
-            groups.first { $0.category == category }
-        }
+        if let cpu = groups.first(where: { $0.category == .cpu }) { return [cpu] }
+        return groups.first(where: { $0.category == .soc }).map { [$0] } ?? []
     }
 }

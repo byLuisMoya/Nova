@@ -131,43 +131,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             return
         }
 
-        let hasColored = components.contains { $0.category != .soc }
-
-        if !hasColored {
-            // Caso habitual (p. ej. M5): solo SoC → temperatura pelada, color
-            // nativo. Usamos el título normal para que macOS lo adapte solo.
-            let value = settings.unit.convert(components[0].maxValue)
-            button.attributedTitle = NSAttributedString(string: "")
-            button.title = " \(Int(value.rounded()))°"
-            return
-        }
-
-        button.attributedTitle = temperatureTitle(components, font: font)
+        // Solo la temperatura, sin nombre del componente ni color: título normal
+        // para que macOS lo adapte solo (claro/oscuro, barra activa/inactiva).
+        button.attributedTitle = NSAttributedString(string: "")
+        button.title = " \(temperatureText(components))"
     }
 
-    /// Título de temperatura con atributos: SoC sin nombre y en color nativo; CPU/GPU con
-    /// nombre y coloreados por severidad.
+    /// Temperatura de la barra (CPU, o SoC como respaldo), sin nombre ni color.
+    private func temperatureText(_ components: [SensorGroup]) -> String {
+        components.map { "\(Int(settings.unit.convert($0.maxValue).rounded()))°" }
+            .joined(separator: "  ")
+    }
+
+    /// Versión con atributos para el título combinado con servidores, en el
+    /// color nativo de la barra.
     private func temperatureTitle(_ components: [SensorGroup], font: NSFont) -> NSAttributedString {
-        let title = NSMutableAttributedString()
-        for (index, group) in components.enumerated() {
-            if index > 0 {
-                title.append(NSAttributedString(string: "  ", attributes: [.font: font]))
-            }
-            let shown = Int(settings.unit.convert(group.maxValue).rounded())
-            if group.category == .soc {
-                // Solo temperatura, sin nombre, color nativo.
-                title.append(NSAttributedString(
-                    string: "\(shown)°",
-                    attributes: [.font: font, .foregroundColor: NSColor.labelColor]))
-            } else {
-                let segment = "\(group.category.rawValue) \(shown)°"
-                title.append(NSAttributedString(string: segment, attributes: [
-                    .foregroundColor: Self.nsColor(for: group.maxValue),
-                    .font: font
-                ]))
-            }
-        }
-        return title
+        NSAttributedString(string: temperatureText(components),
+                           attributes: [.font: font, .foregroundColor: NSColor.labelColor])
     }
 
     /// Escribe el informe de diagnóstico a un archivo y lo revela en el Finder.
@@ -183,13 +163,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         } catch {
             NSLog("Nova: no se pudo escribir el diagnóstico: \(error)")
         }
-    }
-
-    /// Color (NSColor) según la misma regla de severidad de la app.
-    private static func nsColor(for value: Double) -> NSColor {
-        if value < 55 { return .systemGreen }
-        if value <= 70 { return .systemYellow }
-        return .systemRed
     }
 
     /// Crea la vista SwiftUI del desplegable. Se monta al abrirlo y se suelta al

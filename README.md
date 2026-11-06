@@ -33,7 +33,7 @@ funciona directamente.
 
 <p align="center">
   <img src="docs/menubar.png" alt="Nova en la barra de menú" height="26"><br>
-  <sub>En la barra de menú, junto al reloj: la temperatura del SoC.</sub>
+  <sub>En la barra de menú, junto al reloj: la temperatura de la CPU.</sub>
 </p>
 
 <table>
@@ -405,6 +405,13 @@ Los sensores se **descubren dinámicamente** (los nombres varían entre chips) y
 Batería, `nand/ssd`→SSD, `gpu`→GPU, `cpu/core/pacc`→CPU, `pmu/soc/die/ane`→SoC,
 resto→Otros. Cada grupo muestra su valor **máximo** y **medio**.
 
+Algunos chips (p. ej. el M5 base) solo publican por HID dies globales del SoC.
+Por eso la CPU y la GPU se leen además del **SMC** (claves `flt` `Tp**` → núcleos
+P, `Te**` → núcleos E, `Tg**` → GPU), enumeradas una sola vez al arrancar.
+
+La **barra de menú** muestra la temperatura de la **CPU** (máximo de sus núcleos
+P/E); solo si el chip no expone sensores de CPU cae a la del SoC.
+
 > Verificado en este Mac: se leen 44 sensores (`PMU tcal`, `PMU tdie*`,
 > `NAND CH0 temp`, `gas gauge battery`, …).
 
@@ -487,8 +494,9 @@ Dos vías:
 
   Imprime el informe por pantalla y lo guarda en `./Nova-sensores.txt`.
 
-Ejemplo (Apple M5): 44 sensores, todos `PMU tdie/tcal/tdev` → `[SoC]`, más
-`NAND CH0 temp` → `[SSD]` y `gas gauge battery` → `[Batería]`.
+Ejemplo (Apple M5): por HID, todos `PMU tdie/tdev` → `[SoC]`, más
+`NAND CH0 temp` → `[SSD]` y `gas gauge battery` → `[Batería]`; del SMC,
+`CPU P-core Tp**` / `CPU E-core Te**` → `[CPU]` y `GPU Tg**` → `[GPU]`.
 
 ---
 

@@ -1,6 +1,7 @@
 // Implementación en C de las fuentes que usan APIs privadas/semipúblicas:
 //   - Potencia por bloque del SoC vía IOReport (grupo "Energy Model").
-//   - RPM de ventiladores vía AppleSMC (IOConnectCallStructMethod).
+//   - RPM de ventiladores y temperaturas de CPU/GPU vía AppleSMC
+//     (IOConnectCallStructMethod).
 //
 // Las funciones IOHID* (sensores de temperatura) sólo se DECLARAN en el header y
 // se resuelven en enlace contra IOKit.framework; aquí no hacen falta.
@@ -184,7 +185,7 @@ typedef struct {
 } SMCKeyData_t;
 
 enum { kSMCUserClientOpen = 0, kSMCHandleYPCEvent = 2 };
-enum { kSMCReadKey = 5, kSMCGetKeyInfo = 9 };
+enum { kSMCReadKey = 5, kSMCGetKeyFromIndex = 8, kSMCGetKeyInfo = 9 };
 
 static io_connect_t gSMC = 0;
 
@@ -269,4 +270,88 @@ double NovaFanRPM(int index) {
     double rpm = fanRPMUnlocked(index);
     os_unfair_lock_unlock(&gSMCLock);
     return rpm;
+}
+
+// ===========================================================================
+//  SMC — temperaturas de CPU y GPU
+// ===========================================================================
+// En algunos chips (p. ej. M5 base) los sensores HID solo exponen dies globales
+// del SoC; las temperaturas por bloque están en claves SMC de tipo "flt ":
+//   Tp** → núcleos P de la CPU · Te** → núcleos E · Tg** → GPU
+// (convención de Apple Silicon M1–M5, la misma que usa exelban·stats). La lista
+// de claves no cambia en caliente: se enumera una vez (#KEY + índice) y se
+// guarda con su tamaño, para leer después cada clave con una sola llamada.
+
+#define kSMCMaxTempKeys 256
+static unsigned int gTempKeys[kSMCMaxTempKeys];
+static unsigned int gTempKeySizes[kSMCMaxTempKeys];
+static int gTempKeyCount = 0;
+static int gTempKeysEnumerated = 0;
+
+static const unsigned int kSMCTypeFlt = ('f' << 24) | ('l' << 16) | ('t' << 8) | ' ';
+
+static void enumerateTempKeysUnlocked(void) {
+    SMCKeyData_t v; SMCKeyInfoData info;
+    if (smcRead("#KEY", &v, &info) != 0 || info.dataSize < 4) return;
+    unsigned int total = ((unsigned int)v.bytes[0] << 24) | ((unsigned int)v.bytes[1] << 16) |
+                         ((unsigned int)v.bytes[2] << 8)  |  (unsigned int)v.bytes[3];
+    gTempKeyCount = 0;
+    for (unsigned int i = 0; i < total && gTempKeyCount < kSMCMaxTempKeys; i++) {
+        SMCKeyData_t in, out;
+        memset(&in, 0, sizeof(in));
+        memset(&out, 0, sizeof(out));
+        in.data8 = kSMCGetKeyFromIndex;
+        in.data32 = i;
+        if (smcCall(&in, &out) != kIOReturnSuccess || out.result != 0) continue;
+        unsigned int key = out.key;
+        if (((key >> 24) & 0xFF) != 'T') continue;
+        char block = (char)((key >> 16) & 0xFF);
+        if (block != 'p' && block != 'e' && block != 'g') continue;
+
+        memset(&in, 0, sizeof(in));
+        memset(&out, 0, sizeof(out));
+        in.key = key;
+        in.data8 = kSMCGetKeyInfo;
+        if (smcCall(&in, &out) != kIOReturnSuccess || out.result != 0) continue;
+        if (out.keyInfo.dataType != kSMCTypeFlt || out.keyInfo.dataSize < 4) continue;
+
+        gTempKeys[gTempKeyCount] = key;
+        gTempKeySizes[gTempKeyCount] = out.keyInfo.dataSize;
+        gTempKeyCount++;
+    }
+    gTempKeysEnumerated = 1;
+}
+
+static int readSMCTemperaturesUnlocked(NovaSMCTemperature *out, int capacity) {
+    if (!out || capacity <= 0 || smcOpen() != 0) return 0;
+    if (!gTempKeysEnumerated) enumerateTempKeysUnlocked();
+
+    int n = 0;
+    for (int i = 0; i < gTempKeyCount && n < capacity; i++) {
+        SMCKeyData_t in, val;
+        memset(&in, 0, sizeof(in));
+        memset(&val, 0, sizeof(val));
+        in.key = gTempKeys[i];
+        in.keyInfo.dataSize = gTempKeySizes[i];
+        in.data8 = kSMCReadKey;
+        if (smcCall(&in, &val) != kIOReturnSuccess || val.result != 0) continue;
+        float f;
+        memcpy(&f, val.bytes, 4);
+        unsigned int key = gTempKeys[i];
+        out[n].key[0] = (char)((key >> 24) & 0xFF);
+        out[n].key[1] = (char)((key >> 16) & 0xFF);
+        out[n].key[2] = (char)((key >>  8) & 0xFF);
+        out[n].key[3] = (char)( key        & 0xFF);
+        out[n].key[4] = 0;
+        out[n].value = (double)f;
+        n++;
+    }
+    return n;
+}
+
+int NovaReadSMCTemperatures(NovaSMCTemperature *out, int capacity) {
+    os_unfair_lock_lock(&gSMCLock);
+    int n = readSMCTemperaturesUnlocked(out, capacity);
+    os_unfair_lock_unlock(&gSMCLock);
+    return n;
 }
